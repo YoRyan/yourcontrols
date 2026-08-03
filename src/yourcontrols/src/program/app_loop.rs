@@ -15,13 +15,13 @@ use super::state::ProgramState;
 use super::StartServerParameters;
 
 pub struct AppState {
-    pub(crate) app_interface: App,
+    pub(crate) app_interface: Box<dyn App>,
     pub(crate) installer_spawned: bool,
     pub(crate) definitions_to_load: String,
 }
 
 impl AppState {
-    pub fn new(app_interface: App) -> Self {
+    pub fn new(app_interface: Box<dyn App>) -> Self {
         Self {
             app_interface,
             installer_spawned: false,

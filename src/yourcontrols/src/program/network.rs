@@ -46,7 +46,7 @@ pub struct NetworkContext<'a> {
     pub config: &'a Config,
     pub cli: &'a CliWrapper,
     pub updater: &'a Updater,
-    pub app: &'a mut App,
+    pub app: &'a mut Box<dyn App>,
     pub sync: &'a mut SyncState,
 }
 

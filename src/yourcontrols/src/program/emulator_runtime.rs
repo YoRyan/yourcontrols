@@ -32,11 +32,11 @@ pub struct EmulatorSetContext<'a> {
     pub definitions: &'a mut Definitions,
     pub conn: &'a SimConnector,
     pub client: Option<&'a dyn TransferClient>,
-    pub app: &'a App,
+    pub app: &'a Box<dyn App>,
 }
 
 impl EmulatorController {
-    pub fn set_enabled(state: &mut EmulatorRuntimeState, app: &App, enabled: bool) {
+    pub fn set_enabled(state: &mut EmulatorRuntimeState, app: &Box<dyn App>, enabled: bool) {
         state.enabled = enabled;
         app.emulator_enabled(enabled);
     }
@@ -44,7 +44,7 @@ impl EmulatorController {
     pub fn send_vars_if_enabled(
         state: &EmulatorRuntimeState,
         definitions: &Definitions,
-        app: &App,
+        app: &Box<dyn App>,
     ) {
         if !state.enabled {
             return;
@@ -56,7 +56,7 @@ impl EmulatorController {
         }
     }
 
-    pub fn request_vars(state: &EmulatorRuntimeState, definitions: &Definitions, app: &App) {
+    pub fn request_vars(state: &EmulatorRuntimeState, definitions: &Definitions, app: &Box<dyn App>) {
         if !state.enabled {
             return;
         }
@@ -72,7 +72,7 @@ impl EmulatorController {
     pub fn add_var(
         state: &mut EmulatorRuntimeState,
         definitions: &Definitions,
-        app: &App,
+        app: &Box<dyn App>,
         var_id: &str,
     ) {
         if !state.enabled {
@@ -142,7 +142,7 @@ impl EmulatorController {
         state: &mut EmulatorRuntimeState,
         client: Option<&dyn TransferClient>,
         definitions: &Definitions,
-        app: &App,
+        app: &Box<dyn App>,
     ) {
         if !state.enabled || client.is_none() || state.tracked.is_empty() {
             return;

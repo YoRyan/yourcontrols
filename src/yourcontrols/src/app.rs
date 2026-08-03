@@ -82,13 +82,148 @@ fn get_message_str(type_string: &str, data: &str) -> String {
     )
 }
 
-pub struct App {
+pub trait App {
+    fn exited(&self) -> bool;
+    fn get_next_message(&self) -> Result<AppMessage, TryRecvError>;
+    fn invoke(&self, type_string: &str, data: Option<&str>);
+
+    fn error(&self, msg: &str) {
+        self.invoke("error", Some(msg));
+    }
+
+    fn attempt(&self) {
+        self.invoke("attempt", None);
+    }
+
+    fn connected(&self) {
+        self.invoke("connected", None);
+    }
+
+    fn server_fail(&self, reason: &str) {
+        self.invoke("server_fail", Some(reason));
+    }
+
+    fn client_fail(&self, reason: &str) {
+        self.invoke("client_fail", Some(reason));
+    }
+
+    fn gain_control(&self) {
+        self.invoke("control", None);
+    }
+
+    fn lose_control(&self) {
+        self.invoke("lostcontrol", None);
+    }
+
+    fn server_started(&self) {
+        self.invoke("server", None);
+    }
+
+    fn set_session_code(&self, code: &str) {
+        self.invoke("session", Some(code));
+    }
+
+    fn new_connection(&self, name: &str) {
+        self.invoke("newconnection", Some(name));
+    }
+
+    fn lost_connection(&self, name: &str) {
+        self.invoke("lostconnection", Some(name));
+    }
+
+    fn observing(&self, observing: bool) {
+        if observing {
+            self.invoke("observing", None);
+        } else {
+            self.invoke("stop_observing", None);
+        }
+    }
+
+    fn set_observing(&self, name: &str, observing: bool) {
+        if observing {
+            self.invoke("set_observing", Some(name));
+        } else {
+            self.invoke("set_not_observing", Some(name));
+        }
+    }
+
+    fn set_incontrol(&self, name: &str) {
+        self.invoke("set_incontrol", Some(name));
+    }
+
+    fn add_fs2020_aircraft(&self, name: &str) {
+        self.invoke("add_fs2020_aircraft", Some(name));
+    }
+
+    fn add_fs2024_aircraft(&self, name: &str) {
+        self.invoke("add_fs2024_aircraft", Some(name));
+    }
+
+    fn set_aircraft(&self, config: &str) {
+        self.invoke("set_aircraft", Some(config));
+    }
+
+    fn version(&self, version: &str) {
+        self.invoke("version", Some(version))
+    }
+
+    fn update_failed(&self) {
+        self.invoke("update_failed", None);
+    }
+
+    fn send_config(&self, value: &str) {
+        self.invoke("config_msg", Some(value));
+    }
+
+    fn send_network(&self, metrics: &Metrics) {
+        self.invoke(
+            "metrics",
+            Some(
+                json!({
+                    "sentPackets": metrics.sent_packets,
+                    "receivePackets": metrics.received_packets,
+                    "sentBandwidth": metrics.sent_kbps,
+                    "receiveBandwidth": metrics.receive_kbps,
+                    "packetLoss": metrics.packet_loss,
+                    "ping": metrics.rtt/2.0
+                })
+                .to_string()
+                .as_str(),
+            ),
+        )
+    }
+
+    fn set_host(&self) {
+        self.invoke("host", None);
+    }
+
+    fn emulator_enabled(&self, enabled: bool) {
+        self.invoke(
+            "emulator_enabled",
+            Some(if enabled { "true" } else { "false" }),
+        );
+    }
+
+    fn send_emulator_vars(&self, value: &str) {
+        self.invoke("emulator_vars", Some(value));
+    }
+
+    fn send_emulator_var_value(&self, value: &str) {
+        self.invoke("emulator_value", Some(value));
+    }
+
+    fn emulator_error(&self, reason: &str) {
+        self.invoke("emulator_error", Some(reason));
+    }
+}
+
+pub struct WebViewApp {
     app_handle: Arc<Mutex<Option<web_view::Handle<i32>>>>,
     exited: Arc<AtomicBool>,
     rx: Receiver<AppMessage>,
 }
 
-impl App {
+impl WebViewApp {
     pub fn setup(title: String) -> Self {
         let (tx, rx) = unbounded();
 
@@ -166,16 +301,18 @@ impl App {
             rx,
         }
     }
+}
 
-    pub fn exited(&self) -> bool {
+impl App for WebViewApp {
+    fn exited(&self) -> bool {
         self.exited.load(SeqCst)
     }
 
-    pub fn get_next_message(&self) -> Result<AppMessage, TryRecvError> {
+    fn get_next_message(&self) -> Result<AppMessage, TryRecvError> {
         self.rx.try_recv()
     }
 
-    pub fn invoke(&self, type_string: &str, data: Option<&str>) {
+    fn invoke(&self, type_string: &str, data: Option<&str>) {
         let handle = self.app_handle.lock().unwrap();
         if handle.is_none() {
             return;
@@ -193,134 +330,5 @@ impl App {
                 Ok(())
             })
             .ok();
-    }
-
-    pub fn error(&self, msg: &str) {
-        self.invoke("error", Some(msg));
-    }
-
-    pub fn attempt(&self) {
-        self.invoke("attempt", None);
-    }
-
-    pub fn connected(&self) {
-        self.invoke("connected", None);
-    }
-
-    pub fn server_fail(&self, reason: &str) {
-        self.invoke("server_fail", Some(reason));
-    }
-
-    pub fn client_fail(&self, reason: &str) {
-        self.invoke("client_fail", Some(reason));
-    }
-
-    pub fn gain_control(&self) {
-        self.invoke("control", None);
-    }
-
-    pub fn lose_control(&self) {
-        self.invoke("lostcontrol", None);
-    }
-
-    pub fn server_started(&self) {
-        self.invoke("server", None);
-    }
-
-    pub fn set_session_code(&self, code: &str) {
-        self.invoke("session", Some(code));
-    }
-
-    pub fn new_connection(&self, name: &str) {
-        self.invoke("newconnection", Some(name));
-    }
-
-    pub fn lost_connection(&self, name: &str) {
-        self.invoke("lostconnection", Some(name));
-    }
-
-    pub fn observing(&self, observing: bool) {
-        if observing {
-            self.invoke("observing", None);
-        } else {
-            self.invoke("stop_observing", None);
-        }
-    }
-
-    pub fn set_observing(&self, name: &str, observing: bool) {
-        if observing {
-            self.invoke("set_observing", Some(name));
-        } else {
-            self.invoke("set_not_observing", Some(name));
-        }
-    }
-
-    pub fn set_incontrol(&self, name: &str) {
-        self.invoke("set_incontrol", Some(name));
-    }
-
-    pub fn add_fs2020_aircraft(&self, name: &str) {
-        self.invoke("add_fs2020_aircraft", Some(name));
-    }
-
-    pub fn add_fs2024_aircraft(&self, name: &str) {
-        self.invoke("add_fs2024_aircraft", Some(name));
-    }
-
-    pub fn set_aircraft(&self, config: &str) {
-        self.invoke("set_aircraft", Some(config));
-    }
-
-    pub fn version(&self, version: &str) {
-        self.invoke("version", Some(version))
-    }
-
-    pub fn update_failed(&self) {
-        self.invoke("update_failed", None);
-    }
-
-    pub fn send_config(&self, value: &str) {
-        self.invoke("config_msg", Some(value));
-    }
-
-    pub fn send_network(&self, metrics: &Metrics) {
-        self.invoke(
-            "metrics",
-            Some(
-                json!({
-                    "sentPackets": metrics.sent_packets,
-                    "receivePackets": metrics.received_packets,
-                    "sentBandwidth": metrics.sent_kbps,
-                    "receiveBandwidth": metrics.receive_kbps,
-                    "packetLoss": metrics.packet_loss,
-                    "ping": metrics.rtt/2.0
-                })
-                .to_string()
-                .as_str(),
-            ),
-        )
-    }
-
-    pub fn set_host(&self) {
-        self.invoke("host", None);
-    }
-
-    pub fn emulator_enabled(&self, enabled: bool) {
-        self.invoke(
-            "emulator_enabled",
-            Some(if enabled { "true" } else { "false" }),
-        );
-    }
-
-    pub fn send_emulator_vars(&self, value: &str) {
-        self.invoke("emulator_vars", Some(value));
-    }
-
-    pub fn send_emulator_var_value(&self, value: &str) {
-        self.invoke("emulator_value", Some(value));
-    }
-
-    pub fn emulator_error(&self, reason: &str) {
-        self.invoke("emulator_error", Some(reason));
     }
 }
