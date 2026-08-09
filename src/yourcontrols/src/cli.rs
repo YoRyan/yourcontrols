@@ -65,6 +65,12 @@ struct Cli {
 
     #[arg(long, help = "Log to the terminal in addition to log.txt.")]
     log_console: bool,
+
+    #[arg(
+        long,
+        help = "Start a dedicated HTTP server at the provided address to serve the GUI."
+    )]
+    http_gui: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -109,6 +115,10 @@ impl CliWrapper {
 
     pub fn log_to_console(&self) -> bool {
         self.cli.log_console
+    }
+
+    pub fn http_gui_address(&self) -> Option<&str> {
+        self.cli.http_gui.as_deref()
     }
 
     pub fn connection_method(&self) -> ConnectionMethod {

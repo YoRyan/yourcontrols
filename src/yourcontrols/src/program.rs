@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use spin_sleep::sleep;
 
-use crate::app::WebViewApp;
+use crate::app::{App, HttpApp, WebViewApp};
 use crate::cli::CliWrapper;
 use crate::simconfig::Config;
 use crate::update::Updater;
@@ -48,7 +48,14 @@ impl Program {
         cli.apply_config_overrides(&mut config);
 
         let updater = Updater::new();
-        let app_interface = WebViewApp::setup(format!("YourControls v{}", updater.get_version()));
+        let app_interface: Box<dyn App> = if let Some(addr) = cli.http_gui_address() {
+            Box::new(HttpApp::setup(addr))
+        } else {
+            Box::new(WebViewApp::setup(format!(
+                "YourControls v{}",
+                updater.get_version()
+            )))
+        };
 
         Self {
             state: ProgramState::default(),
@@ -58,7 +65,7 @@ impl Program {
             sim: simconnect::SimState::new(),
             network: NetworkState::new(),
             sync: SyncState::new(),
-            app: AppState::new(Box::new(app_interface)),
+            app: AppState::new(app_interface),
         }
     }
 

@@ -217,6 +217,15 @@ pub trait App {
     }
 }
 
+fn read_logo() -> Vec<u8> {
+    let mut logo = vec![];
+    File::open("assets/logo.png")
+        .unwrap()
+        .read_to_end(&mut logo)
+        .ok();
+    logo
+}
+
 pub struct WebViewApp {
     app_handle: Arc<Mutex<Option<web_view::Handle<i32>>>>,
     exited: Arc<AtomicBool>,
@@ -226,12 +235,7 @@ pub struct WebViewApp {
 impl WebViewApp {
     pub fn setup(title: String) -> Self {
         let (tx, rx) = unbounded();
-
-        let mut logo = vec![];
-        File::open("assets/logo.png")
-            .unwrap()
-            .read_to_end(&mut logo)
-            .ok();
+        let logo = read_logo();
 
         let handle = Arc::new(Mutex::new(None));
         let handle_clone = handle.clone();
@@ -330,5 +334,98 @@ impl App for WebViewApp {
                 Ok(())
             })
             .ok();
+    }
+}
+
+pub struct HttpApp {
+    invoke_q: Arc<Mutex<Vec<String>>>,
+    rx: Receiver<AppMessage>,
+}
+
+impl HttpApp {
+    pub fn setup(address: &str) -> Self {
+        let (tx, rx) = unbounded();
+        let address = address.to_string();
+        let logo = read_logo();
+
+        let invoke_q = Arc::new(Mutex::new(Vec::<String>::new()));
+        let invoke_q_clone = invoke_q.clone();
+
+        thread::spawn(move || {
+            rouille::start_server(address, move |request| {
+                rouille::router!(request,
+                    (GET) (/) => {
+                        rouille::Response::html(format!(
+                    r##"<!DOCTYPE html>
+                <html>
+                <head>
+                    <style>
+                        {bootstrapcss}
+                        {css}
+                    </style>
+                </head>
+                    <body class="themed">
+                    <img src="data:image/png;base64,{logo}" class="logo-image"/>
+                    {body}
+                    {emulator_body}
+                </body>
+                <script>
+                    {jquery}
+                    {bootstrapjs}
+                    {js_http}
+                    {js1}
+                    {js_emulator}
+                    {js}
+                </script>
+                </html>
+            "##,
+                    js_http = include_str!("../web/http.js"),
+                    css = include_str!("../web/stylesheet.css"),
+                    js = include_str!("../web/main.js"),
+                    js1 = include_str!("../web/list.js"),
+                    js_emulator = include_str!("../web/emulator.js"),
+                    body = include_str!("../web/index.html"),
+                    emulator_body = include_str!("../web/emulator.html"),
+                    jquery = include_str!("../web/jquery.min.js"),
+                    bootstrapjs = include_str!("../web/bootstrap.bundle.min.js"),
+                    bootstrapcss = include_str!("../web/bootstrap.min.css"),
+                    logo = base64::engine::general_purpose::STANDARD_NO_PAD.encode(logo.as_slice())
+                ))},
+                    (GET) (/invoke) => {
+                        let mut q = invoke_q_clone.lock().unwrap();
+                        if let Some(eval) = q.pop() {
+                            rouille::Response::text(eval)
+                        } else {
+                            rouille::Response::empty_204()
+                        }
+                    },
+                    (PUT) (/invoke) => {
+                        let msg = rouille::try_or_400!(rouille::input::json_input(request));
+                        tx.try_send(msg).ok();
+                        rouille::Response::text("ok")
+                    },
+                    _ => rouille::Response::empty_404()
+                )
+            });
+        });
+
+        Self { invoke_q, rx }
+    }
+}
+
+impl App for HttpApp {
+    fn exited(&self) -> bool {
+        false
+    }
+
+    fn get_next_message(&self) -> Result<AppMessage, TryRecvError> {
+        self.rx.try_recv()
+    }
+
+    fn invoke(&self, type_string: &str, data: Option<&str>) {
+        let data = data.unwrap_or_default().to_string();
+        let eval = get_message_str(type_string, data.as_str());
+        let mut q = self.invoke_q.lock().unwrap();
+        q.push(eval);
     }
 }
