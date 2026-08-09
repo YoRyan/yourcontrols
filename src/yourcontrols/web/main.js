@@ -697,7 +697,7 @@ $(function () {
     $('[data-toggle="tooltip"]').tooltip();
 
     $.ajax({
-        url: "https://api.ipify.org",
+        url: typeof isHttp !== "undefined" ? "/external-ip/v4" : "https://api.ipify.org",
         async: true,
     })
         .done(function (ip) {
@@ -715,7 +715,7 @@ $(function () {
         });
 
     $.ajax({
-        url: "https://api6.ipify.org",
+        url: typeof isHttp !== "undefined" ? "/external-ip/v6" : "https://api6.ipify.org",
         async: true,
     })
         .done(function (ip) {

@@ -1,3 +1,5 @@
+isHttp = true;
+
 external = {};
 external.invoke = function (body) {
     fetch("/invoke", {

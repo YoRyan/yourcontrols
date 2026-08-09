@@ -337,6 +337,14 @@ impl App for WebViewApp {
     }
 }
 
+fn fetch_url_text(url: &str) -> rouille::Response {
+    if let attohttpc::Result::Ok(resp) = attohttpc::get(url).send() {
+        rouille::Response::text(resp.text().unwrap_or_default())
+    } else {
+        rouille::Response::empty_400()
+    }
+}
+
 pub struct HttpApp {
     invoke_q: Arc<Mutex<Vec<String>>>,
     rx: Receiver<AppMessage>,
@@ -403,6 +411,12 @@ impl HttpApp {
                         let msg = rouille::try_or_400!(rouille::input::json_input(request));
                         tx.try_send(msg).ok();
                         rouille::Response::text("ok")
+                    },
+                    (GET) (/external-ip/v4) => {
+                        fetch_url_text("https://api.ipify.org")
+                    },
+                    (GET) (/external-ip/v6) => {
+                        fetch_url_text("https://api6.ipify.org")
                     },
                     _ => rouille::Response::empty_404()
                 )
