@@ -10,7 +10,7 @@ use std::{
     io::Read,
     net::IpAddr,
     sync::{
-        atomic::{AtomicBool, Ordering::SeqCst},
+        atomic::{AtomicBool, AtomicU32, Ordering::SeqCst},
         Arc, Mutex,
     },
     thread,
@@ -337,6 +337,23 @@ impl App for WebViewApp {
     }
 }
 
+fn check_client_id(stored: &AtomicU32, request: Option<&str>) -> bool {
+    let Some(request) = request else {
+        return false;
+    };
+    let Ok(request) = request.parse::<u32>() else {
+        return false;
+    };
+
+    match request {
+        0 => false, // That's our uninitialized value. Not allowed.
+        _ => match stored.compare_exchange(0, request, SeqCst, SeqCst) {
+            Ok(_) => true,
+            Err(_) => stored.load(SeqCst) == request,
+        },
+    }
+}
+
 fn fetch_url_text(url: &str) -> rouille::Response {
     if let attohttpc::Result::Ok(resp) = attohttpc::get(url).send() {
         rouille::Response::text(resp.text().unwrap_or_default())
@@ -359,6 +376,8 @@ impl HttpApp {
         let logo = read_logo();
 
         thread::spawn(move || {
+            let client_id = AtomicU32::new(0);
+
             rouille::start_server(address, move |request| {
                 rouille::router!(request,
                     (GET) (/) => {
@@ -399,6 +418,10 @@ impl HttpApp {
                     logo = base64::engine::general_purpose::STANDARD_NO_PAD.encode(logo.as_slice())
                 ))},
                     (GET) (/invoke) => {
+                        if !check_client_id(&client_id, request.header("X-Client-ID")) {
+                            return rouille::Response::empty_400().with_status_code(409);
+                        }
+
                         if let Ok(eval) = invoke_rx.try_recv() {
                             rouille::Response::text(eval)
                         } else {
@@ -406,6 +429,10 @@ impl HttpApp {
                         }
                     },
                     (PUT) (/invoke) => {
+                        if !check_client_id(&client_id, request.header("X-Client-ID")) {
+                            return rouille::Response::empty_400().with_status_code(409);
+                        }
+
                         let msg = rouille::try_or_400!(rouille::input::json_input(request));
                         msg_tx.try_send(msg).ok();
                         rouille::Response::text("ok")
