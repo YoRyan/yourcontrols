@@ -1,29 +1,28 @@
 isHttp = true;
 
 external = {};
-external.invoke = function (body) {
-    fetch("/invoke", {
-        method: "PUT",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body,
-    });
+external.invoke = function (json) {
+    const blob = new Blob([json], { type: "application/json" });
+    const request = new XMLHttpRequest();
+    request.open("PUT", "/invoke", false);
+    request.send(blob);
 }
 
-async function httpMessageReceive() {
-    const response = await fetch("/invoke");
-    let timeout;
-    switch (response.status) {
-        case 200:
-            eval(await response.text());
-            timeout = 0;
-            break;
-        case 204:
-        default:
-            timeout = 10;
-            break;
-    }
-    setTimeout(httpMessageReceive, timeout);
+function httpMessageReceive() {
+    loop: do {
+        const request = new XMLHttpRequest();
+        request.open("GET", "/invoke", false);
+        request.send(null);
+
+        switch (request.status) {
+            case 200:
+                eval(request.responseText);
+                break;
+            case 204:
+            default:
+                break loop;
+        }
+    } while (true);
+    setTimeout(httpMessageReceive, 50);
 }
 httpMessageReceive();

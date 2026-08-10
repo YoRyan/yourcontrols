@@ -1,7 +1,7 @@
 use crate::simconfig;
 
 use base64::Engine;
-use crossbeam_channel::{unbounded, Receiver, TryRecvError};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
 use laminar::Metrics;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -346,18 +346,17 @@ fn fetch_url_text(url: &str) -> rouille::Response {
 }
 
 pub struct HttpApp {
-    invoke_q: Arc<Mutex<Vec<String>>>,
+    tx: Sender<String>,
     rx: Receiver<AppMessage>,
 }
 
 impl HttpApp {
     pub fn setup(address: &str) -> Self {
-        let (tx, rx) = unbounded();
+        // We want invoke() to block, so we will use a 0-bounded channel.
+        let (invoke_tx, invoke_rx) = bounded(0);
+        let (msg_tx, msg_rx) = unbounded();
         let address = address.to_string();
         let logo = read_logo();
-
-        let invoke_q = Arc::new(Mutex::new(Vec::<String>::new()));
-        let invoke_q_clone = invoke_q.clone();
 
         thread::spawn(move || {
             rouille::start_server(address, move |request| {
@@ -400,8 +399,7 @@ impl HttpApp {
                     logo = base64::engine::general_purpose::STANDARD_NO_PAD.encode(logo.as_slice())
                 ))},
                     (GET) (/invoke) => {
-                        let mut q = invoke_q_clone.lock().unwrap();
-                        if let Some(eval) = q.pop() {
+                        if let Ok(eval) = invoke_rx.try_recv() {
                             rouille::Response::text(eval)
                         } else {
                             rouille::Response::empty_204()
@@ -409,7 +407,7 @@ impl HttpApp {
                     },
                     (PUT) (/invoke) => {
                         let msg = rouille::try_or_400!(rouille::input::json_input(request));
-                        tx.try_send(msg).ok();
+                        msg_tx.try_send(msg).ok();
                         rouille::Response::text("ok")
                     },
                     (GET) (/external-ip/v4) => {
@@ -423,7 +421,10 @@ impl HttpApp {
             });
         });
 
-        Self { invoke_q, rx }
+        Self {
+            tx: invoke_tx,
+            rx: msg_rx,
+        }
     }
 }
 
@@ -437,9 +438,8 @@ impl App for HttpApp {
     }
 
     fn invoke(&self, type_string: &str, data: Option<&str>) {
-        let data = data.unwrap_or_default().to_string();
-        let eval = get_message_str(type_string, data.as_str());
-        let mut q = self.invoke_q.lock().unwrap();
-        q.push(eval);
+        let eval = get_message_str(type_string, data.unwrap_or_default());
+        // Block until the frontend executes, exactly like the webview version.
+        self.tx.send(eval).unwrap();
     }
 }
