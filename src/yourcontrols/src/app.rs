@@ -365,15 +365,19 @@ fn fetch_url_text(url: &str) -> rouille::Response {
 pub struct HttpApp {
     tx: Sender<String>,
     rx: Receiver<AppMessage>,
+    exited: Arc<AtomicBool>,
 }
 
 impl HttpApp {
     pub fn setup(address: &str) -> Self {
+        let address = address.to_string();
+        let logo = read_logo();
+
         // We want invoke() to block, so we will use a 0-bounded channel.
         let (invoke_tx, invoke_rx) = bounded(0);
         let (msg_tx, msg_rx) = unbounded();
-        let address = address.to_string();
-        let logo = read_logo();
+        let exited = Arc::new(AtomicBool::new(false));
+        let exited_clone = exited.clone();
 
         thread::spawn(move || {
             let client_id = AtomicU32::new(0);
@@ -443,6 +447,10 @@ impl HttpApp {
                     (GET) (/external-ip/v6) => {
                         fetch_url_text("https://api6.ipify.org")
                     },
+                    (DELETE) (/process) => {
+                        exited_clone.store(true, SeqCst);
+                        rouille::Response::text("ok")
+                    },
                     _ => rouille::Response::empty_404()
                 )
             });
@@ -451,13 +459,14 @@ impl HttpApp {
         Self {
             tx: invoke_tx,
             rx: msg_rx,
+            exited,
         }
     }
 }
 
 impl App for HttpApp {
     fn exited(&self) -> bool {
-        false
+        self.exited.load(SeqCst)
     }
 
     fn get_next_message(&self) -> Result<AppMessage, TryRecvError> {
