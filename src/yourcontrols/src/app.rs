@@ -354,11 +354,10 @@ fn check_client_id(stored: &AtomicU32, request: Option<&str>) -> bool {
     }
 }
 
-fn fetch_url_text(url: &str) -> rouille::Response {
-    if let attohttpc::Result::Ok(resp) = attohttpc::get(url).send() {
-        rouille::Response::text(resp.text().unwrap_or_default())
-    } else {
-        rouille::Response::empty_400()
+fn proxy_text(url: &str) -> rouille::Response {
+    match attohttpc::get(url).send() {
+        attohttpc::Result::Ok(resp) => rouille::Response::text(resp.text().unwrap_or_default()),
+        attohttpc::Result::Err(_) => rouille::Response::empty_400(),
     }
 }
 
@@ -426,10 +425,9 @@ impl HttpApp {
                             return rouille::Response::empty_400().with_status_code(409);
                         }
 
-                        if let Ok(eval) = invoke_rx.try_recv() {
-                            rouille::Response::text(eval)
-                        } else {
-                            rouille::Response::empty_204()
+                        match invoke_rx.try_recv() {
+                            Ok(eval) => rouille::Response::text(eval),
+                            Err(_) => rouille::Response::empty_204()
                         }
                     },
                     (PUT) (/invoke) => {
@@ -442,10 +440,10 @@ impl HttpApp {
                         rouille::Response::text("ok")
                     },
                     (GET) (/external-ip/v4) => {
-                        fetch_url_text("https://api.ipify.org")
+                        proxy_text("https://api.ipify.org")
                     },
                     (GET) (/external-ip/v6) => {
-                        fetch_url_text("https://api6.ipify.org")
+                        proxy_text("https://api6.ipify.org")
                     },
                     (DELETE) (/process) => {
                         exited_clone.store(true, SeqCst);

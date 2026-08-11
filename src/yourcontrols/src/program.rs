@@ -48,13 +48,12 @@ impl Program {
         cli.apply_config_overrides(&mut config);
 
         let updater = Updater::new();
-        let app_interface: Box<dyn App> = if let Some(addr) = cli.http_gui_address() {
-            Box::new(HttpApp::setup(addr))
-        } else {
-            Box::new(WebViewApp::setup(format!(
+        let app_interface: Box<dyn App> = match cli.http_gui_address() {
+            Some(addr) => Box::new(HttpApp::setup(addr)),
+            None => Box::new(WebViewApp::setup(format!(
                 "YourControls v{}",
                 updater.get_version()
-            )))
+            ))),
         };
 
         Self {
