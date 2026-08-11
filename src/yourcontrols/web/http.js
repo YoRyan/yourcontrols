@@ -11,9 +11,7 @@ external.invoke = function (json) {
 }
 
 async function httpExitProcess(el) {
-    const response = await fetch("/process", {
-        method: "DELETE"
-    });
+    const response = await fetch("/process", { method: "DELETE" });
     if (response.status === 200) {
         el.disabled = true;
     }
