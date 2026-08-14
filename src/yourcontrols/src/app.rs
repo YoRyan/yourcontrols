@@ -430,7 +430,7 @@ impl HttpApp {
                             Err(_) => rouille::Response::empty_204()
                         }
                     },
-                    (PUT) (/invoke) => {
+                    (POST) (/invoke) => {
                         if !check_client_id(&client_id, request.header("X-Client-ID")) {
                             return rouille::Response::empty_400().with_status_code(409);
                         }

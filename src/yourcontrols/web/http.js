@@ -5,7 +5,7 @@ external = {};
 external.invoke = function (json) {
     const blob = new Blob([json], { type: "application/json" });
     const request = new XMLHttpRequest();
-    request.open("PUT", "/invoke", false);
+    request.open("POST", "/invoke", false);
     request.setRequestHeader("X-Client-ID", httpClientId);
     request.send(blob);
 }
