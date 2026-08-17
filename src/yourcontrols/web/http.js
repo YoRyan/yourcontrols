@@ -9,8 +9,10 @@ async function httpMain() {
     }
 
     const wsMessage = httpWebSocket("/ws/message", "message");
+    // It's important to have this shim in place before the rest of the JavaScript executes, so it must be placed above any await.
     external = {};
     external.invoke = async function (json) {
+        // We may get called before the websocket has finished opening.
         (await wsMessage).send(json);
     };
 
