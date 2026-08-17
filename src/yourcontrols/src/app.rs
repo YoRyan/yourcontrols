@@ -1,7 +1,7 @@
 use crate::simconfig;
 
 use base64::Engine;
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{unbounded, Receiver, Sender, TryRecvError};
 use laminar::Metrics;
 use rouille::websocket;
 use serde::{Deserialize, Serialize};
@@ -399,8 +399,7 @@ impl HttpApp {
         let address = address.to_string();
         let logo = read_logo();
 
-        // We want invoke() to block, so we will use a 0-bounded channel.
-        let (invoke_tx, invoke_rx) = bounded(0);
+        let (invoke_tx, invoke_rx) = unbounded();
         let (msg_tx, msg_rx) = unbounded();
         let exited = Arc::new(AtomicBool::new(false));
         let exited_clone = exited.clone();
@@ -507,7 +506,6 @@ impl App for HttpApp {
 
     fn invoke(&self, type_string: &str, data: Option<&str>) {
         let eval = get_message_str(type_string, data.unwrap_or_default());
-        // Block until the frontend executes, exactly like the webview version.
-        self.tx.send(eval).unwrap();
+        self.tx.try_send(eval).ok();
     }
 }
