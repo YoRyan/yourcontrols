@@ -3,6 +3,7 @@ use crate::simconfig;
 use base64::Engine;
 use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
 use laminar::Metrics;
+use rouille::websocket;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -354,6 +355,32 @@ fn check_client_id(stored: &AtomicU32, request: Option<&str>) -> bool {
     }
 }
 
+fn websocket_invoke_thread(
+    mut websocket: websocket::Websocket,
+    rx: Receiver<String>,
+) -> Result<(), websocket::SendError> {
+    while let Ok(eval) = rx.recv() {
+        websocket.send_text(eval.as_str())?;
+    }
+    Ok(())
+}
+
+fn websocket_message_thread(
+    mut websocket: websocket::Websocket,
+    tx: Sender<AppMessage>,
+) -> Result<(), websocket::SendError> {
+    while let Some(msg) = websocket.next() {
+        let websocket::Message::Text(msg) = msg else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<AppMessage>(msg.as_str()) else {
+            continue;
+        };
+        tx.try_send(json).ok();
+    }
+    Ok(())
+}
+
 fn proxy_text(url: &str) -> rouille::Response {
     match attohttpc::get(url).send() {
         attohttpc::Result::Ok(resp) => rouille::Response::text(resp.text().unwrap_or_default()),
@@ -420,24 +447,31 @@ impl HttpApp {
                     bootstrapcss = include_str!("../web/bootstrap.min.css"),
                     logo = base64::engine::general_purpose::STANDARD_NO_PAD.encode(logo.as_slice())
                 ))},
-                    (GET) (/invoke) => {
-                        if !check_client_id(&client_id, request.header("X-Client-ID")) {
-                            return rouille::Response::empty_400().with_status_code(409);
-                        }
-
-                        match invoke_rx.try_recv() {
-                            Ok(eval) => rouille::Response::text(eval),
-                            Err(_) => rouille::Response::empty_204()
+                    (GET) (/is-exclusive) => {
+                        match check_client_id(&client_id, request.header("X-Client-ID")) {
+                            true => rouille::Response::text("ok"),
+                            false => rouille::Response::empty_400().with_status_code(409)
                         }
                     },
-                    (POST) (/invoke) => {
-                        if !check_client_id(&client_id, request.header("X-Client-ID")) {
-                            return rouille::Response::empty_400().with_status_code(409);
-                        }
-
-                        let msg = rouille::try_or_400!(rouille::input::json_input(request));
-                        msg_tx.try_send(msg).ok();
-                        rouille::Response::text("ok")
+                    // We use two websockets for transmitting and receiving because rouille cannot send messages while blocking on a receive.
+                    // https://github.com/tomaka/rouille/issues/140
+                    (GET) (/ws/invoke) => {
+                        let (response, websocket) = rouille::try_or_400!(websocket::start(request, Some("invoke")));
+                        let invoke_rx_clone = invoke_rx.clone();
+                        thread::spawn(move || {
+                            let ws = websocket.recv().unwrap();
+                            let _ = websocket_invoke_thread(ws, invoke_rx_clone);
+                        });
+                        response
+                    },
+                    (GET) (/ws/message) => {
+                        let (response, websocket) = rouille::try_or_400!(websocket::start(request, Some("message")));
+                        let msg_tx_clone = msg_tx.clone();
+                        thread::spawn(move || {
+                            let ws = websocket.recv().unwrap();
+                            let _ = websocket_message_thread(ws, msg_tx_clone);
+                        });
+                        response
                     },
                     (GET) (/external-ip/v4) => {
                         proxy_text("https://api.ipify.org")

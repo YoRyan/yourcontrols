@@ -1,13 +1,38 @@
-var isHttp = true,
-    httpClientId = Math.floor(Math.random() * 0xffffffff) + "";
+var isHttp = true;
 
-external = {};
-external.invoke = function (json) {
-    const blob = new Blob([json], { type: "application/json" });
+async function httpMain() {
+    if (!httpCheckExclusive()) {
+        document.documentElement.innerHTML = `<p>Only one browser can access the web server at a time.</p>
+<p>If you've already closed the original tab that connected, please stop and restart the program.</p>
+<p><button onclick="httpExitProcess(this);">Request Shutdown</button></p>`;
+        return;
+    }
+
+    const wsMessage = httpWebSocket("/ws/message", "message");
+    external = {};
+    external.invoke = async function (json) {
+        (await wsMessage).send(json);
+    };
+
+    const wsInvoke = await httpWebSocket("/ws/invoke", "invoke");
+    wsInvoke.addEventListener("message", event => {
+        eval(event.data);
+    });
+}
+
+function httpCheckExclusive() {
+    const clientId = Math.floor(Math.random() * 0xffffffff) + "";
     const request = new XMLHttpRequest();
-    request.open("POST", "/invoke", false);
-    request.setRequestHeader("X-Client-ID", httpClientId);
-    request.send(blob);
+    request.open("GET", "/is-exclusive", false);
+    request.setRequestHeader("X-Client-ID", clientId);
+    request.send(null);
+    switch (request.status) {
+        case 200:
+            return true;
+        case 409:
+        default:
+            return false;
+    }
 }
 
 async function httpExitProcess(el) {
@@ -17,29 +42,13 @@ async function httpExitProcess(el) {
     }
 }
 
-function httpMessageReceive() {
-    const lockedOutHtml = `<p>Only one browser can access the web server at a time.</p>
-<p>If you've already closed the original tab that connected, please stop and restart the program.</p>
-<p><button onclick="httpExitProcess(this);">Request Shutdown</button></p>`;
-
-    loop: do {
-        const request = new XMLHttpRequest();
-        request.open("GET", "/invoke", false);
-        request.setRequestHeader("X-Client-ID", httpClientId);
-        request.send(null);
-
-        switch (request.status) {
-            case 200:
-                eval(request.responseText);
-                break;
-            case 409:
-                document.documentElement.innerHTML = lockedOutHtml;
-                break loop;
-            case 204:
-            default:
-                setTimeout(httpMessageReceive, 50);
-                break loop;
-        }
-    } while (true);
+async function httpWebSocket(url, ...protocols) {
+    const socket = new WebSocket(url, ...protocols);
+    await new Promise((resolve, reject) => {
+        socket.addEventListener("open", resolve);
+        socket.addEventListener("error", reject);
+    });
+    return socket;
 }
-httpMessageReceive();
+
+httpMain();
